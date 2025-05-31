@@ -1664,6 +1664,8 @@ func (expr *UnaryExpr) String() string {
 		return "-" + expr.X.String()
 	case NOT:
 		return "NOT " + expr.X.String()
+	case BITNOT:
+		return "~" + expr.X.String()
 	default:
 		panic(fmt.Sprintf("sql.UnaryExpr.String(): invalid op %s", expr.Op))
 	}

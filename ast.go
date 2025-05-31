@@ -1943,6 +1943,7 @@ func (expr *Null) Clone() *Null {
 		return nil
 	}
 	other := *expr
+	other.X = CloneExpr(expr.X)
 	return &other
 }
 

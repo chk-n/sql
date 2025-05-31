@@ -1,4 +1,4 @@
-module github.com/chk-n/sql
+module github.com/rqlite/sql
 
 go 1.17
 

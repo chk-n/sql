@@ -13,7 +13,6 @@ type Node interface {
 
 func (*AlterTableStatement) node()         {}
 func (*AnalyzeStatement) node()            {}
-func (*ReindexStatement) node()            {}
 func (*Assignment) node()                  {}
 func (*BeginStatement) node()              {}
 func (*BinaryExpr) node()                  {}
@@ -68,6 +67,7 @@ func (*QualifiedTableName) node()          {}
 func (*QualifiedTableFunctionName) node()  {}
 func (*Raise) node()                       {}
 func (*Range) node()                       {}
+func (*ReindexStatement) node()            {}
 func (*ReleaseStatement) node()            {}
 func (*ResultColumn) node()                {}
 func (*ReturningClause) node()             {}

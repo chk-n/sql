@@ -138,6 +138,8 @@ func CloneStatement(stmt Statement) Statement {
 		return stmt.Clone()
 	case *CreateViewStatement:
 		return stmt.Clone()
+	case *CreateVirtualTableStatement:
+		return stmt.Clone()
 	case *DeleteStatement:
 		return stmt.Clone()
 	case *DropIndexStatement:

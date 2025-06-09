@@ -616,6 +616,41 @@ func TestParser_ParseStatement(t *testing.T) {
 		AssertParseStatementError(t, `CREATE TABLE tbl AS`, `1:19: expected SELECT or VALUES, found 'EOF'`)
 		AssertParseStatementError(t, `CREATE TABLE tbl AS WITH`, `1:24: expected table name, found 'EOF'`)
 
+		t.Run("WithSchema", func(t *testing.T) {
+			t.Run("Basic", func(t *testing.T) {
+				AssertParseStatement(t, `CREATE TABLE main.tbl (col1 TEXT PRIMARY KEY, col2 INTEGER)`, &sql.CreateTableStatement{
+					Create: pos(0),
+					Table:  pos(7),
+					Schema: &sql.Ident{Name: "main", NamePos: pos(13)},
+					Name:   &sql.Ident{Name: "tbl", NamePos: pos(18)},
+					Lparen: pos(22),
+					Columns: []*sql.ColumnDefinition{
+						{
+							Name: &sql.Ident{Name: "col1", NamePos: pos(23)},
+							Type: &sql.Type{
+								Name: &sql.Ident{Name: "TEXT", NamePos: pos(28)},
+							},
+							Constraints: []sql.Constraint{
+								&sql.PrimaryKeyConstraint{
+									Primary: pos(33),
+									Key:     pos(41),
+								},
+							},
+						},
+						{
+							Name: &sql.Ident{Name: "col2", NamePos: pos(46)},
+							Type: &sql.Type{
+								Name: &sql.Ident{Name: "INTEGER", NamePos: pos(51)},
+							},
+						},
+					},
+					Rparen: pos(58),
+				})
+			})
+
+			AssertParseStatementError(t, `CREATE TABLE main. (col1 TEXT PRIMARY KEY, col2 INTEGER)`, `1:20: expected table name, found '('`)
+		})
+
 		t.Run("WithComment", func(t *testing.T) {
 			t.Run("SingleLine", func(t *testing.T) {
 				AssertParseStatement(t, "CREATE TABLE tbl\n\t-- test one two\n\t(col1 TEXT)", &sql.CreateTableStatement{
@@ -1368,6 +1403,122 @@ func TestParser_ParseStatement(t *testing.T) {
 				AssertParseStatementError(t, `CREATE TABLE tbl (col1 TEXT, FOREIGN KEY (x) REFERENCES tbl (x) ON UPDATE TABLE`, `1:75: expected SET NULL, SET DEFAULT, CASCADE, RESTRICT, or NO ACTION, found 'TABLE'`)
 				AssertParseStatementError(t, `CREATE TABLE tbl (col1 TEXT, FOREIGN KEY (x) REFERENCES tbl (x) ON UPDATE CASCADE NOT`, `1:85: expected DEFERRABLE, found 'EOF'`)
 			})
+		})
+	})
+
+	t.Run("CreateVirtualTable", func(t *testing.T) {
+		AssertParseStatement(t, `CREATE VIRTUAL TABLE vtbl USING mdl`, &sql.CreateVirtualTableStatement{
+			Create:     pos(0),
+			Virtual:    pos(7),
+			Table:      pos(15),
+			Name:       &sql.Ident{NamePos: pos(21), Name: "vtbl"},
+			Using:      pos(26),
+			ModuleName: &sql.Ident{NamePos: pos(32), Name: "mdl"},
+		})
+
+		AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl`, "1:25: expected USING, found 'EOF'")
+		AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING`, "1:31: expected module name, found 'EOF'")
+
+		t.Run("WithSchemaQualifiedTable", func(t *testing.T) {
+			AssertParseStatement(t, `CREATE VIRTUAL TABLE schm.vtbl USING mdl`, &sql.CreateVirtualTableStatement{
+				Create:     pos(0),
+				Virtual:    pos(7),
+				Table:      pos(15),
+				Schema:     &sql.Ident{NamePos: pos(21), Name: "schm"},
+				Dot:        pos(25),
+				Name:       &sql.Ident{NamePos: pos(26), Name: "vtbl"},
+				Using:      pos(31),
+				ModuleName: &sql.Ident{NamePos: pos(37), Name: "mdl"},
+			})
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE schm.`, "1:26: expected table name, found 'EOF'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE schm.vtbl`, "1:30: expected USING, found 'EOF'")
+		})
+
+		t.Run("WithIfNotExists", func(t *testing.T) {
+			AssertParseStatement(t, `CREATE VIRTUAL TABLE IF NOT EXISTS vtbl USING mdl`, &sql.CreateVirtualTableStatement{
+				Create:      pos(0),
+				Virtual:     pos(7),
+				Table:       pos(15),
+				If:          pos(21),
+				IfNot:       pos(24),
+				IfNotExists: pos(28),
+				Name:        &sql.Ident{NamePos: pos(35), Name: "vtbl"},
+				Using:       pos(40),
+				ModuleName:  &sql.Ident{NamePos: pos(46), Name: "mdl"},
+			})
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE IF`, "1:23: expected NOT, found 'EOF'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE IF NOT`, "1:27: expected EXISTS, found 'EOF'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE IF NOT EXIST`, "1:29: expected EXISTS, found EXIST")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE IF NOT EXISTS`, "1:34: expected schema or table name, found 'EOF'")
+		})
+
+		t.Run("WithArguments", func(t *testing.T) {
+			AssertParseStatement(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1)`, &sql.CreateVirtualTableStatement{
+				Create:     pos(0),
+				Virtual:    pos(7),
+				Table:      pos(15),
+				Name:       &sql.Ident{NamePos: pos(21), Name: "vtbl"},
+				Using:      pos(26),
+				ModuleName: &sql.Ident{NamePos: pos(32), Name: "mdl"},
+				Lparen:     pos(35),
+				Arguments: []*sql.ModuleArgument{
+					{Name: &sql.Ident{NamePos: pos(36), Name: "arg1"}},
+				},
+				Rparen: pos(40),
+			})
+			AssertParseStatement(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1,arg2='a',"arg3"=false)`, &sql.CreateVirtualTableStatement{
+				Create:     pos(0),
+				Virtual:    pos(7),
+				Table:      pos(15),
+				Name:       &sql.Ident{NamePos: pos(21), Name: "vtbl"},
+				Using:      pos(26),
+				ModuleName: &sql.Ident{NamePos: pos(32), Name: "mdl"},
+				Lparen:     pos(35),
+				Arguments: []*sql.ModuleArgument{
+					{
+						Name: &sql.Ident{NamePos: pos(36), Name: "arg1"},
+					},
+					{
+						Name:    &sql.Ident{NamePos: pos(41), Name: "arg2"},
+						Assign:  pos(45),
+						Literal: &sql.StringLit{ValuePos: pos(46), Value: "a"},
+					},
+					{
+						Name:    &sql.Ident{NamePos: pos(50), Name: "arg3", Quoted: true},
+						Assign:  pos(56),
+						Literal: &sql.BoolLit{ValuePos: pos(57), Value: false},
+					},
+				},
+				Rparen: pos(62),
+			})
+			AssertParseStatement(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1 TEXT)`, &sql.CreateVirtualTableStatement{
+				Create:     pos(0),
+				Virtual:    pos(7),
+				Table:      pos(15),
+				Name:       &sql.Ident{NamePos: pos(21), Name: "vtbl"},
+				Using:      pos(26),
+				ModuleName: &sql.Ident{NamePos: pos(32), Name: "mdl"},
+				Lparen:     pos(35),
+				Arguments: []*sql.ModuleArgument{
+					{
+						Name: &sql.Ident{NamePos: pos(36), Name: "arg1"},
+						Type: &sql.Type{Name: &sql.Ident{NamePos: pos(41), Name: "TEXT"}},
+					},
+				},
+				Rparen: pos(45),
+			})
+
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(`, "1:36: expected module argument name, found 'EOF'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1`, "1:40: expected comma or right paren, found 'EOF'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1=3`, "1:42: expected comma or right paren, found 'EOF'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1=3,`, "1:43: expected module argument name, found 'EOF'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl()`, "1:37: expected module arguments, found ')'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1 BLOB`, "1:45: expected comma or right paren, found 'EOF'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1 arg2)`, "1:42: expected comma or right paren, found arg2")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(arg1 TEXT=value)`, "1:46: expected comma or right paren, found '='")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(=)`, "1:37: expected module argument name, found '='")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(key=)`, "1:41: expected expression, found ')'")
+			AssertParseStatementError(t, `CREATE VIRTUAL TABLE vtbl USING mdl(=value)`, "1:37: expected module argument name, found '='")
 		})
 	})
 
@@ -2247,6 +2398,68 @@ func TestParser_ParseStatement(t *testing.T) {
 				},
 			},
 		})
+		AssertParseStatement(t, `SELECT * FROM X as a JOIN Y as b ON a.id = b.id JOIN Z as c ON b.id = c.id`, &sql.SelectStatement{
+			Select: pos(0),
+			Columns: []*sql.ResultColumn{
+				{Star: pos(7)},
+			},
+			From: pos(9),
+			Source: &sql.JoinClause{
+				X: &sql.QualifiedTableName{
+					Name:  &sql.Ident{NamePos: pos(14), Name: "X"},
+					As:    pos(16),
+					Alias: &sql.Ident{NamePos: pos(19), Name: "a"},
+				},
+				Operator: &sql.JoinOperator{Join: pos(21)},
+				Y: &sql.JoinClause{
+					X: &sql.QualifiedTableName{
+						Name:  &sql.Ident{NamePos: pos(26), Name: "Y"},
+						As:    pos(28),
+						Alias: &sql.Ident{NamePos: pos(31), Name: "b"},
+					},
+					Operator: &sql.JoinOperator{Join: pos(48)},
+					Y: &sql.QualifiedTableName{
+						Name:  &sql.Ident{NamePos: pos(53), Name: "Z"},
+						As:    pos(55),
+						Alias: &sql.Ident{NamePos: pos(58), Name: "c"},
+					},
+					Constraint: &sql.OnConstraint{
+						On: pos(60),
+						X: &sql.BinaryExpr{
+							X: &sql.QualifiedRef{
+								Table:  &sql.Ident{NamePos: pos(63), Name: "b"},
+								Dot:    pos(64),
+								Column: &sql.Ident{NamePos: pos(65), Name: "id"},
+							},
+							OpPos: pos(68),
+							Op:    sql.EQ,
+							Y: &sql.QualifiedRef{
+								Table:  &sql.Ident{NamePos: pos(70), Name: "c"},
+								Dot:    pos(71),
+								Column: &sql.Ident{NamePos: pos(72), Name: "id"},
+							},
+						},
+					},
+				},
+				Constraint: &sql.OnConstraint{
+					On: pos(33),
+					X: &sql.BinaryExpr{
+						X: &sql.QualifiedRef{
+							Table:  &sql.Ident{NamePos: pos(36), Name: "a"},
+							Dot:    pos(37),
+							Column: &sql.Ident{NamePos: pos(38), Name: "id"},
+						},
+						OpPos: pos(41),
+						Op:    sql.EQ,
+						Y: &sql.QualifiedRef{
+							Table:  &sql.Ident{NamePos: pos(43), Name: "b"},
+							Dot:    pos(44),
+							Column: &sql.Ident{NamePos: pos(45), Name: "id"},
+						},
+					},
+				},
+			},
+		})
 		AssertParseStatement(t, `SELECT * FROM foo LEFT OUTER JOIN bar`, &sql.SelectStatement{
 			Select: pos(0),
 			Columns: []*sql.ResultColumn{
@@ -2351,6 +2564,53 @@ func TestParser_ParseStatement(t *testing.T) {
 			Columns:   []*sql.ResultColumn{{Star: pos(7)}},
 			Where:     pos(9),
 			WhereExpr: &sql.BoolLit{ValuePos: pos(15), Value: true},
+		})
+
+		AssertParseStatement(t, `SELECT 1 WHERE true AND true`, &sql.SelectStatement{
+			Select:  pos(0),
+			Columns: []*sql.ResultColumn{{Expr: &sql.NumberLit{ValuePos: pos(7), Value: "1"}}},
+			Where:   pos(9),
+			WhereExpr: &sql.BinaryExpr{
+				X:     &sql.BoolLit{ValuePos: pos(15), Value: true},
+				OpPos: pos(20),
+				Op:    sql.AND,
+				Y:     &sql.BoolLit{ValuePos: pos(24), Value: true},
+			},
+		})
+
+		AssertParseStatement(t, `SELECT 1 WHERE true AND (0, 1) = (SELECT 2,3)`, &sql.SelectStatement{
+			Select:  pos(0),
+			Columns: []*sql.ResultColumn{{Expr: &sql.NumberLit{ValuePos: pos(7), Value: "1"}}}, Where: pos(9),
+			WhereExpr: &sql.BinaryExpr{
+				X:     &sql.BoolLit{ValuePos: pos(15), Value: true},
+				OpPos: pos(20),
+				Op:    sql.AND,
+				Y: &sql.BinaryExpr{
+					X: &sql.ExprList{
+						Lparen: pos(24),
+						Exprs: []sql.Expr{
+							&sql.NumberLit{ValuePos: pos(25), Value: "0"},
+							&sql.NumberLit{ValuePos: pos(28), Value: "1"},
+						},
+						Rparen: pos(29),
+					},
+					OpPos: pos(31),
+					Op:    sql.EQ,
+					Y: &sql.ParenExpr{
+						Lparen: pos(33),
+						X: sql.SelectExpr{
+							SelectStatement: &sql.SelectStatement{
+								Select: pos(34),
+								Columns: []*sql.ResultColumn{
+									{Expr: &sql.NumberLit{ValuePos: pos(41), Value: "2"}},
+									{Expr: &sql.NumberLit{ValuePos: pos(43), Value: "3"}},
+								},
+							},
+						},
+						Rparen: pos(44),
+					},
+				},
+			},
 		})
 
 		AssertParseStatement(t, `SELECT * GROUP BY foo, bar`, &sql.SelectStatement{
